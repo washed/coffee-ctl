@@ -15,7 +15,7 @@ import (
 
 func main() {
 	zerolog.TimeFieldFormat = time.RFC3339Nano
-	zerolog.SetGlobalLevel(zerolog.InfoLevel)
+	zerolog.SetGlobalLevel(zerolog.TraceLevel)
 	log.Logger = log.Output(
 		zerolog.ConsoleWriter{Out: os.Stdout, TimeFormat: time.RFC3339Nano},
 	)
@@ -33,11 +33,27 @@ func main() {
 		Str("configFilePath", configFilePath).
 		Msg("read config file")
 
-	c := controller.NewCoffeeCtl()
+	if conf.LogLevel == "" {
+		conf.LogLevel = "info"
+		log.Error().
+			Str("conf.LogLevel", conf.LogLevel).
+			Msg("using default log level")
+	}
+
+	logLevel, err := zerolog.ParseLevel(conf.LogLevel)
+	if err != nil {
+		log.Error().Str("conf.LogLevel", conf.LogLevel).Err(err).Msg("error configuring log level")
+		os.Exit(1)
+	}
+	zerolog.SetGlobalLevel(logLevel)
+	log.Error().
+		Str("conf.LogLevel", conf.LogLevel).
+		Int("logLevel", int(logLevel)).
+		Msg("set log level")
+
+	c := controller.NewCoffeeCtl(conf)
 
 	go c.Run()
-
-	// do stuff here
 
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, os.Interrupt)

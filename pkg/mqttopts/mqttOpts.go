@@ -1,4 +1,4 @@
-package models
+package mqttopts
 
 import (
 	"os"
@@ -9,7 +9,7 @@ import (
 	MQTT "github.com/eclipse/paho.mqtt.golang"
 )
 
-func getMQTTOpts() *MQTT.ClientOptions {
+func GetMQTTOpts() *MQTT.ClientOptions {
 	mqttOpts := MQTT.NewClientOptions()
 	mqttOpts.AddBroker(os.Getenv("MQTT_BROKER_URL"))
 	mqttOpts.SetUsername(os.Getenv("MQTT_BROKER_USERNAME"))

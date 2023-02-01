@@ -1,6 +1,8 @@
 package controller
 
 import (
+	"coffee-ctl/pkg/config"
+	"coffee-ctl/pkg/mqttopts"
 	"coffee-ctl/pkg/sse"
 	"encoding/json"
 	"io"
@@ -8,34 +10,51 @@ import (
 	"time"
 
 	"github.com/rs/zerolog/log"
+	"github.com/washed/shelly-go"
 
 	"github.com/gin-gonic/gin"
 )
 
-const defaultTimeToSwitchOff = 5 * time.Minute // time.Hour
+const defaultTimeToSwitchOff = 10 * time.Second // time.Hour
 
-func NewCoffeeCtl() (c CoffeeCtl) {
+func NewCoffeeCtl(conf config.Config) (c CoffeeCtl) {
 	r := gin.Default()
 	s := sse.NewServer(c.GetStatusString)
-	c = CoffeeCtl{timeToSwitchOff: defaultTimeToSwitchOff, router: r, stream: s}
+
+	mqttOpts := mqttopts.GetMQTTOpts()
+	b := shelly.NewShellyButton1(conf.ShellyButton1ID, mqttOpts)
+	p := shelly.NewShellyPlugS(conf.ShellyPlugSID, mqttOpts)
+
+	c = CoffeeCtl{
+		timeToSwitchOff: defaultTimeToSwitchOff,
+		router:          r,
+		stream:          s,
+		button:          b,
+		plugS:           p,
+	}
+
 	return c
 }
 
 type Status struct {
-	CountdownNs      time.Duration `json:"countdownNs"`
-	SwitchOffAt      *time.Time    `json:"switchOffAt"`
-	CountdownRunning bool          `json:"countdownRunning"`
-	SwitchState      bool          `json:"switchState"`
+	CountdownNs         time.Duration `json:"countdownNs"`
+	SwitchOffAt         *time.Time    `json:"switchOffAt"`
+	CountdownRunning    bool          `json:"countdownRunning"`
+	IntendedSwitchState bool          `json:"intendedSwitchState"`
+	SwitchState         bool          `json:"switchState"`
 }
 
 type CoffeeCtl struct {
-	timeToSwitchOff  time.Duration
-	lastRunTime      time.Time
-	countdownRunning bool
-	switchState      bool
-	router           *gin.Engine
-	stream           *sse.Event
-	lastStatus       Status
+	timeToSwitchOff     time.Duration
+	router              *gin.Engine
+	stream              *sse.Event
+	button              shelly.ShellyButton1
+	plugS               shelly.ShellyPlugS
+	lastStatus          Status
+	lastRunTime         time.Time
+	countdownRunning    bool
+	intendedSwitchState bool
+	switchState         bool
 }
 
 func (c *CoffeeCtl) makeRoutes() {
@@ -101,10 +120,11 @@ func (c *CoffeeCtl) GetStatus() Status {
 		switchOffAtPtr = &switchOffAt
 	}
 	return Status{
-		CountdownNs:      c.timeToSwitchOff,
-		SwitchOffAt:      switchOffAtPtr,
-		CountdownRunning: c.countdownRunning,
-		SwitchState:      c.switchState,
+		CountdownNs:         c.timeToSwitchOff,
+		SwitchOffAt:         switchOffAtPtr,
+		CountdownRunning:    c.countdownRunning,
+		IntendedSwitchState: c.intendedSwitchState,
+		SwitchState:         c.switchState,
 	}
 }
 
@@ -129,15 +149,39 @@ func (c *CoffeeCtl) stopCountdown() {
 
 func (c *CoffeeCtl) SwitchOn() {
 	log.Debug().Msg("switching on")
-	// this should reflect the actual plug switch state
-	c.switchState = true
+	c.plugS.SwitchOn()
+	c.intendedSwitchState = true
 	c.startCountdown()
 }
 
 func (c *CoffeeCtl) SwitchOff() {
 	log.Debug().Msg("switching off")
-	c.switchState = false
+	c.plugS.SwitchOff()
+	c.intendedSwitchState = false
 	c.stopCountdown()
+}
+
+func (c *CoffeeCtl) subscribeSwitchState() {
+	c.plugS.SubscribeRelayState(func() {
+		c.switchState = true
+
+		// We call SwitchOn/Off here to correctly track state if the plug is turned on
+		// via the physical button on the plug or the web UI
+		c.SwitchOn()
+	}, func() {
+		c.switchState = false
+		c.SwitchOff()
+	})
+}
+
+func (c *CoffeeCtl) subscribeButtonEvents() {
+	c.button.SubscribeInputEvent(func() {
+		if c.switchState {
+			c.SwitchOff()
+		} else {
+			c.SwitchOn()
+		}
+	}, nil, nil, nil)
 }
 
 func (c *CoffeeCtl) AddTime(d time.Duration) {
@@ -166,6 +210,14 @@ func (c *CoffeeCtl) emitStatus() {
 }
 
 func (c *CoffeeCtl) Run() {
+	c.plugS.Connect()
+	defer c.plugS.Close()
+	c.subscribeSwitchState()
+
+	c.button.Connect()
+	defer c.button.Close()
+	c.subscribeButtonEvents()
+
 	c.makeRoutes()
 	go c.router.Run()
 
