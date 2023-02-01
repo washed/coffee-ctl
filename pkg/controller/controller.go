@@ -15,7 +15,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-const defaultTimeToSwitchOff = 10 * time.Second // time.Hour
+const defaultTimeToSwitchOff = 2 * time.Hour
 
 func NewCoffeeCtl(conf config.Config) (c CoffeeCtl) {
 	r := gin.Default()
