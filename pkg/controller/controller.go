@@ -162,15 +162,20 @@ func (c *CoffeeCtl) SwitchOff() {
 }
 
 func (c *CoffeeCtl) subscribeSwitchState() {
+	/*
+		We call SwitchOn/Off here to correctly track state if the plug is turned on
+		via the physical button on the plug or the web UI
+	*/
 	c.plugS.SubscribeRelayState(func() {
-		c.switchState = true
-
-		// We call SwitchOn/Off here to correctly track state if the plug is turned on
-		// via the physical button on the plug or the web UI
-		c.SwitchOn()
+		if !c.switchState {
+			c.switchState = true
+			c.SwitchOn()
+		}
 	}, func() {
-		c.switchState = false
-		c.SwitchOff()
+		if c.switchState {
+			c.switchState = false
+			c.SwitchOff()
+		}
 	})
 }
 
