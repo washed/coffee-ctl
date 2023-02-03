@@ -43,7 +43,7 @@ type Status struct {
 	CountdownRunning    bool          `json:"countdownRunning"`
 	IntendedSwitchState bool          `json:"intendedSwitchState"`
 	SwitchState         bool          `json:"switchState"`
-	ButtonBatterySoC    float32       `json:"button_battery_soc"`
+	ButtonBatterySoC    float32       `json:"buttonBatterySoC"`
 }
 
 type CoffeeCtl struct {
