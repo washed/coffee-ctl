@@ -6,6 +6,7 @@ import (
 	"coffee-ctl/pkg/sse"
 	"encoding/json"
 	"io"
+	"math"
 	"net/http"
 	"time"
 
@@ -42,6 +43,7 @@ type Status struct {
 	CountdownRunning    bool          `json:"countdownRunning"`
 	IntendedSwitchState bool          `json:"intendedSwitchState"`
 	SwitchState         bool          `json:"switchState"`
+	ButtonBatterySoC    float32       `json:"button_battery_soc"`
 }
 
 type CoffeeCtl struct {
@@ -55,6 +57,7 @@ type CoffeeCtl struct {
 	countdownRunning    bool
 	intendedSwitchState bool
 	switchState         bool
+	buttonBatterySoC    float32
 }
 
 func (c *CoffeeCtl) makeRoutes() {
@@ -119,12 +122,19 @@ func (c *CoffeeCtl) GetStatus() Status {
 		switchOffAt := time.Now().Add(c.timeToSwitchOff)
 		switchOffAtPtr = &switchOffAt
 	}
+
+	var buttonBatteryPtr *float32 = nil
+	if !math.IsNaN(float64(c.buttonBatterySoC)) {
+		buttonBatteryPtr = &c.buttonBatterySoC
+	}
+
 	return Status{
 		CountdownNs:         c.timeToSwitchOff,
 		SwitchOffAt:         switchOffAtPtr,
 		CountdownRunning:    c.countdownRunning,
 		IntendedSwitchState: c.intendedSwitchState,
 		SwitchState:         c.switchState,
+		ButtonBatterySoC:    *buttonBatteryPtr,
 	}
 }
 
@@ -189,6 +199,15 @@ func (c *CoffeeCtl) subscribeButtonEvents() {
 	}, nil, nil, nil)
 }
 
+func (c *CoffeeCtl) subscribeButtonBattery() {
+	// We use NaN to indicate an invalid value
+	c.buttonBatterySoC = float32(math.NaN())
+
+	c.button.SubscribeBattery(func(buttonBatterySoC float32) {
+		c.buttonBatterySoC = buttonBatterySoC
+	})
+}
+
 func (c *CoffeeCtl) AddTime(d time.Duration) {
 	c.timeToSwitchOff += d
 	if c.timeToSwitchOff < 0 {
@@ -222,6 +241,7 @@ func (c *CoffeeCtl) Run() {
 	c.button.Connect()
 	defer c.button.Close()
 	c.subscribeButtonEvents()
+	c.subscribeButtonBattery()
 
 	c.makeRoutes()
 	go c.router.Run()
