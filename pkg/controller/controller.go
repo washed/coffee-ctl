@@ -43,7 +43,7 @@ type Status struct {
 	CountdownRunning    bool          `json:"countdownRunning"`
 	IntendedSwitchState bool          `json:"intendedSwitchState"`
 	SwitchState         bool          `json:"switchState"`
-	ButtonBatterySoC    float32       `json:"buttonBatterySoC"`
+	ButtonBatterySoC    *float32      `json:"buttonBatterySoC"`
 }
 
 type CoffeeCtl struct {
@@ -134,7 +134,7 @@ func (c *CoffeeCtl) GetStatus() Status {
 		CountdownRunning:    c.countdownRunning,
 		IntendedSwitchState: c.intendedSwitchState,
 		SwitchState:         c.switchState,
-		ButtonBatterySoC:    *buttonBatteryPtr,
+		ButtonBatterySoC:    buttonBatteryPtr,
 	}
 }
 
