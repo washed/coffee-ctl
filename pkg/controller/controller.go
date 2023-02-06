@@ -5,6 +5,7 @@ import (
 	"coffee-ctl/pkg/mqttopts"
 	"coffee-ctl/pkg/sse"
 	"encoding/json"
+	"fmt"
 	"io"
 	"math"
 	"net/http"
@@ -228,7 +229,7 @@ func (c *CoffeeCtl) emitStatus() {
 			Msg("status changed")
 		payload, _ := json.Marshal(status)
 		// TODO: error handling?
-		c.stream.Message <- string(payload)
+		c.stream.Message <- fmt.Sprintf("data: %s", payload)
 		c.lastStatus = status
 	} else {
 		// emit keep-alive

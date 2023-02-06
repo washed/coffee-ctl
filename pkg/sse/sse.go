@@ -49,6 +49,10 @@ func (stream *Event) listen() {
 		case eventMsg := <-stream.Message:
 			for clientMessageChan := range stream.TotalClients {
 				clientMessageChan <- eventMsg
+				log.Trace().
+					Str("message", eventMsg).
+					Interface("channel", clientMessageChan).
+					Msg("sent server event")
 			}
 		}
 	}
