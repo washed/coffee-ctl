@@ -6,7 +6,6 @@ import (
 	"coffee-ctl/pkg/sse"
 	"encoding/json"
 	"io"
-	"math"
 	"net/http"
 	"time"
 
@@ -16,7 +15,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-const defaultTimeToSwitchOff = 2 * time.Hour
+const defaultCountdownNs = 2 * time.Hour
 
 func NewCoffeeCtl(conf config.Config) (c CoffeeCtl) {
 	r := gin.Default()
@@ -27,36 +26,44 @@ func NewCoffeeCtl(conf config.Config) (c CoffeeCtl) {
 	p := shelly.NewShellyPlugS(conf.ShellyPlugSID, mqttOpts)
 
 	c = CoffeeCtl{
-		timeToSwitchOff: defaultTimeToSwitchOff,
-		router:          r,
-		stream:          s,
-		button:          b,
-		plugS:           p,
+		router: r,
+		stream: s,
+		button: b,
+		plugS:  p,
+		status: Status{
+			CountdownNs: defaultCountdownNs,
+		},
 	}
 
 	return c
 }
 
+type ButtonBatteryStatus struct {
+	Soc   float32 `json:"soc"`
+	Valid bool    `json:"valid"`
+}
+
+type SwitchOffAtStatus struct {
+	Time  time.Time `json:"time"`
+	Valid bool      `json:"valid"`
+}
+
 type Status struct {
-	CountdownNs         time.Duration `json:"countdownNs"`
-	SwitchOffAt         *time.Time    `json:"switchOffAt"`
-	CountdownRunning    bool          `json:"countdownRunning"`
-	IntendedSwitchState bool          `json:"intendedSwitchState"`
-	SwitchState         bool          `json:"switchState"`
-	ButtonBatterySoC    *float32      `json:"buttonBatterySoC"`
+	CountdownNs         time.Duration       `json:"countdownNs"`
+	SwitchOffAtStatus   SwitchOffAtStatus   `json:"switchOffAtStatus"`
+	CountdownRunning    bool                `json:"countdownRunning"`
+	IntendedSwitchState bool                `json:"intendedSwitchState"`
+	SwitchState         bool                `json:"switchState"`
+	ButtonBatteryStatus ButtonBatteryStatus `json:"buttonBatteryStatus"`
 }
 
 type CoffeeCtl struct {
-	timeToSwitchOff     time.Duration
-	router              *gin.Engine
-	stream              *sse.Event
-	button              shelly.ShellyButton1
-	plugS               shelly.ShellyPlugS
-	lastRunTime         time.Time
-	countdownRunning    bool
-	intendedSwitchState bool
-	switchState         bool
-	buttonBatterySoC    float32
+	router      *gin.Engine
+	stream      *sse.Event
+	button      shelly.ShellyButton1
+	plugS       shelly.ShellyPlugS
+	lastRunTime time.Time
+	status      Status
 }
 
 func (c *CoffeeCtl) makeRoutes() {
@@ -83,13 +90,6 @@ func (c *CoffeeCtl) makeRoutes() {
 		},
 	)
 
-	c.router.GET("/timer", func(ctx *gin.Context) {
-		ctx.JSON(http.StatusOK, gin.H{
-			"countdownNs": c.timeToSwitchOff,
-			"switchOffAt": time.Now().Add(c.timeToSwitchOff),
-		})
-	})
-
 	c.router.POST("/timer", func(ctx *gin.Context) {
 		var timer struct {
 			Delta time.Duration `json:"delta"`
@@ -101,7 +101,7 @@ func (c *CoffeeCtl) makeRoutes() {
 
 		c.AddTime(timer.Delta)
 
-		ctx.JSON(http.StatusOK, c.GetStatus())
+		ctx.JSON(http.StatusOK, c.status)
 	})
 
 	c.router.POST("/on", func(ctx *gin.Context) {
@@ -115,58 +115,34 @@ func (c *CoffeeCtl) makeRoutes() {
 	})
 }
 
-func (c *CoffeeCtl) GetStatus() Status {
-	var switchOffAtPtr *time.Time = nil
-	if c.countdownRunning {
-		switchOffAt := time.Now().Add(c.timeToSwitchOff)
-		switchOffAtPtr = &switchOffAt
-	}
-
-	var buttonBatteryPtr *float32 = nil
-	if !math.IsNaN(float64(c.buttonBatterySoC)) {
-		buttonBatteryPtr = &c.buttonBatterySoC
-	}
-
-	return Status{
-		CountdownNs:         c.timeToSwitchOff,
-		SwitchOffAt:         switchOffAtPtr,
-		CountdownRunning:    c.countdownRunning,
-		IntendedSwitchState: c.intendedSwitchState,
-		SwitchState:         c.switchState,
-		ButtonBatterySoC:    buttonBatteryPtr,
-	}
-}
-
 func (c *CoffeeCtl) GetStatusString() string {
-	payload, _ := json.Marshal(c.GetStatus())
+	payload, _ := json.Marshal(c.status)
 	// TODO: error handling?
 	return string(payload)
 }
 
 func (c *CoffeeCtl) startCountdown() {
 	log.Debug().Msg("starting countdown")
-	c.countdownRunning = true
-
+	c.status.CountdownRunning = true
 }
 
 func (c *CoffeeCtl) stopCountdown() {
 	log.Debug().Msg("stopping countdown")
-	c.countdownRunning = false
-	c.timeToSwitchOff = defaultTimeToSwitchOff
-
+	c.status.CountdownRunning = false
+	c.status.CountdownNs = defaultCountdownNs
 }
 
 func (c *CoffeeCtl) SwitchOn() {
 	log.Debug().Msg("switching on")
 	c.plugS.SwitchOn()
-	c.intendedSwitchState = true
+	c.status.IntendedSwitchState = true
 	c.startCountdown()
 }
 
 func (c *CoffeeCtl) SwitchOff() {
 	log.Debug().Msg("switching off")
 	c.plugS.SwitchOff()
-	c.intendedSwitchState = false
+	c.status.IntendedSwitchState = false
 	c.stopCountdown()
 }
 
@@ -176,13 +152,13 @@ func (c *CoffeeCtl) subscribeSwitchState() {
 		via the physical button on the plug or the web UI
 	*/
 	c.plugS.SubscribeRelayState(func() {
-		if !c.switchState {
-			c.switchState = true
+		if !c.status.SwitchState {
+			c.status.SwitchState = true
 			c.SwitchOn()
 		}
 	}, func() {
-		if c.switchState {
-			c.switchState = false
+		if c.status.SwitchState {
+			c.status.SwitchState = false
 			c.SwitchOff()
 		}
 	})
@@ -190,7 +166,7 @@ func (c *CoffeeCtl) subscribeSwitchState() {
 
 func (c *CoffeeCtl) subscribeButtonEvents() {
 	c.button.SubscribeInputEvent(func() {
-		if c.switchState {
+		if c.status.SwitchState {
 			c.SwitchOff()
 		} else {
 			c.SwitchOn()
@@ -199,34 +175,32 @@ func (c *CoffeeCtl) subscribeButtonEvents() {
 }
 
 func (c *CoffeeCtl) subscribeButtonBattery() {
-	// We use NaN to indicate an invalid value
-	c.buttonBatterySoC = float32(math.NaN())
+	c.status.ButtonBatteryStatus.Valid = false
 
 	c.button.SubscribeBattery(func(buttonBatterySoC float32) {
-		c.buttonBatterySoC = buttonBatterySoC
+		c.status.ButtonBatteryStatus.Soc = buttonBatterySoC
+		c.status.ButtonBatteryStatus.Valid = true
 	})
 }
 
 func (c *CoffeeCtl) AddTime(d time.Duration) {
-	c.timeToSwitchOff += d
-	if c.timeToSwitchOff < 0 {
-		c.timeToSwitchOff = 0
+	c.status.CountdownNs += d
+	if c.status.CountdownNs < 0 {
+		c.status.CountdownNs = 0
 	}
 
 	log.Debug().
 		Int("added duration", int(d)).
-		Int("new timeToSwitchOff", int(c.timeToSwitchOff)).
-		Msg("adding time to timeToSwitchOff")
+		Int("new CountdownNs", int(c.status.CountdownNs)).
+		Msg("adding time to CountdownNs")
 }
 
 func (c *CoffeeCtl) emitStatus() {
-	status := c.GetStatus()
-
 	log.Debug().
-		Interface("status", status).
+		Interface("status", c.status).
 		Msg("emitting status")
 
-	payload, _ := json.Marshal(status)
+	payload, _ := json.Marshal(c.status)
 	// TODO: error handling?
 
 	c.stream.Message <- string(payload)
@@ -256,11 +230,15 @@ func (c *CoffeeCtl) Run() {
 
 		log.Trace().Int("deltaT", int(deltaT)).Msg("running coffee-ctl loop")
 
-		if c.countdownRunning {
-			c.timeToSwitchOff -= deltaT
+		if c.status.CountdownRunning {
+			c.status.CountdownNs -= deltaT
+			c.status.SwitchOffAtStatus.Time = time.Now().Add(c.status.CountdownNs)
+			c.status.SwitchOffAtStatus.Valid = true
+		} else {
+			c.status.SwitchOffAtStatus.Valid = false
 		}
 
-		if c.timeToSwitchOff <= 0 {
+		if c.status.CountdownNs <= 0 {
 			c.SwitchOff()
 		}
 
