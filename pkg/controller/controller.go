@@ -233,7 +233,7 @@ func (c *CoffeeCtl) emitStatus() {
 	} else {
 		// emit keep-alive
 		// this also makes sure we keep removing disconnected clients
-		c.stream.Message <- ":"
+		c.stream.Message <- ": keep-alive"
 	}
 }
 
