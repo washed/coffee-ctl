@@ -230,6 +230,10 @@ func (c *CoffeeCtl) emitStatus() {
 		// TODO: error handling?
 		c.stream.Message <- string(payload)
 		c.lastStatus = status
+	} else {
+		// emit keep-alive
+		// this also makes sure we keep removing disconnected clients
+		c.stream.Message <- ":"
 	}
 }
 
