@@ -5,7 +5,6 @@ import (
 	"coffee-ctl/pkg/mqttopts"
 	"coffee-ctl/pkg/sse"
 	"encoding/json"
-	"fmt"
 	"io"
 	"math"
 	"net/http"
@@ -53,7 +52,6 @@ type CoffeeCtl struct {
 	stream              *sse.Event
 	button              shelly.ShellyButton1
 	plugS               shelly.ShellyPlugS
-	lastStatus          Status
 	lastRunTime         time.Time
 	countdownRunning    bool
 	intendedSwitchState bool
@@ -223,19 +221,15 @@ func (c *CoffeeCtl) AddTime(d time.Duration) {
 
 func (c *CoffeeCtl) emitStatus() {
 	status := c.GetStatus()
-	if c.lastStatus != status {
-		log.Debug().
-			Interface("status", status).
-			Msg("status changed")
-		payload, _ := json.Marshal(status)
-		// TODO: error handling?
-		c.stream.Message <- fmt.Sprintf("data: %s", payload)
-		c.lastStatus = status
-	} else {
-		// emit keep-alive
-		// this also makes sure we keep removing disconnected clients
-		c.stream.Message <- ": keep-alive"
-	}
+
+	log.Debug().
+		Interface("status", status).
+		Msg("emitting status")
+
+	payload, _ := json.Marshal(status)
+	// TODO: error handling?
+
+	c.stream.Message <- string(payload)
 }
 
 func (c *CoffeeCtl) Run() {
