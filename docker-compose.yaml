@@ -2,7 +2,25 @@ services:
   coffee-ctl:
     image: mfreudenberg/coffee-ctl:latest
     build: .
+    volumes:
+      - type: bind
+        source: ./config.yaml
+        target: /config.yaml
+        read_only: true
     environment:
       MQTT_BROKER_URL:
       MQTT_BROKER_USERNAME:
       MQTT_BROKER_PASSWORD:
+    ports:
+      - "8080:8080"
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: [ "CMD", "redis-cli", "--raw", "incr", "ping" ]
+      interval: 1s
+      retries: 1000
+      timeout: 2s
