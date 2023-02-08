@@ -35,7 +35,9 @@ func (stream *Event) listen() {
 			log.Info().
 				Int("clientCount", len(stream.TotalClients)).
 				Msg("client added")
-			client <- stream.OnNewClientCallback()
+			if stream.OnNewClientCallback != nil {
+				client <- stream.OnNewClientCallback()
+			}
 
 		// Remove closed client
 		case client := <-stream.ClosedClients:

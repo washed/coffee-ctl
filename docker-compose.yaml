@@ -11,6 +11,7 @@ services:
       MQTT_BROKER_URL:
       MQTT_BROKER_USERNAME:
       MQTT_BROKER_PASSWORD:
+      REDIS_URL:
     ports:
       - "8080:8080"
     depends_on:
@@ -19,6 +20,7 @@ services:
 
   redis:
     image: redis:7-alpine
+    hostname: redis
     healthcheck:
       test: [ "CMD", "redis-cli", "--raw", "incr", "ping" ]
       interval: 1s
