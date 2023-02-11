@@ -248,7 +248,22 @@ func (c *CoffeeCtl) emitStatus(status *Status) {
 	c.stream.Message <- string(payload)
 }
 
-func (c *CoffeeCtl) loop(tick <-chan time.Time) {
+func (c *CoffeeCtl) Run() {
+	c.plugS.Connect()
+	defer c.plugS.Close()
+	c.subscribeSwitchState()
+
+	c.button.Connect()
+	defer c.button.Close()
+	c.subscribeButtonEvents()
+	c.subscribeButtonBattery()
+
+	c.makeRoutes()
+
+	go c.router.Run()
+
+	tick := time.Tick(200 * time.Millisecond)
+
 	var lastRunTime time.Time
 
 	for {
@@ -286,22 +301,4 @@ func (c *CoffeeCtl) loop(tick <-chan time.Time) {
 			c.emitStatus(status)
 		}
 	}
-}
-
-func (c *CoffeeCtl) Run() {
-	c.plugS.Connect()
-	defer c.plugS.Close()
-	c.subscribeSwitchState()
-
-	c.button.Connect()
-	defer c.button.Close()
-	c.subscribeButtonEvents()
-	c.subscribeButtonBattery()
-
-	c.makeRoutes()
-
-	go c.router.Run()
-
-	tick := time.Tick(200 * time.Millisecond)
-	go c.loop(tick)
 }
