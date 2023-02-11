@@ -22,6 +22,7 @@ const defaultCountdownNs = 2 * time.Hour
 
 func NewCoffeeCtl(conf config.Config) (c CoffeeCtl) {
 	r := gin.Default()
+	r.SetTrustedProxies([]string{"0.0.0.0/24"})
 	s := sse.NewServer(nil)
 
 	mqttOpts := mqttopts.GetMQTTOpts()
