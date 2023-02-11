@@ -144,7 +144,7 @@ func (c *CoffeeCtl) getStatus() (*Status, error) {
 	var status Status
 	statusBytes := []byte(statusStr)
 	err = json.Unmarshal(statusBytes, &status)
-	log.Debug().Str("statusStr", statusStr).Interface("status", status).Msg("status from redis")
+	log.Trace().Str("statusStr", statusStr).Interface("status", status).Msg("status from redis")
 	if err != nil {
 		log.Error().
 			Err(err).
@@ -238,7 +238,7 @@ func (c *CoffeeCtl) addTime(status *Status, d time.Duration) {
 }
 
 func (c *CoffeeCtl) emitStatus(status *Status) {
-	log.Debug().
+	log.Trace().
 		Interface("status", status).
 		Msg("emitting status")
 
@@ -261,7 +261,6 @@ func (c *CoffeeCtl) loop(tick <-chan time.Time) {
 			c.setStatus(status)
 
 		case now := <-tick:
-			log.Debug().Msg("running main control loop")
 			if lastRunTime.IsZero() {
 				lastRunTime = now
 			}

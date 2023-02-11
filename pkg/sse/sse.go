@@ -52,7 +52,7 @@ func (stream *Event) listen() {
 			for clientMessageChan := range stream.TotalClients {
 				clientMessageChan <- eventMsg
 			}
-			log.Debug().
+			log.Trace().
 				Str("message", eventMsg).
 				Int("clientCount", len(stream.TotalClients)).
 				Msg("sent server event")
