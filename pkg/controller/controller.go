@@ -172,34 +172,29 @@ func (c *CoffeeCtl) switchOn(status *Status) {
 	log.Debug().Msg("switching on, starting countdown")
 	c.plugS.SwitchOn()
 	status.IntendedSwitchState = true
-	status.CountdownRunning = true
 }
 
 func (c *CoffeeCtl) switchOff(status *Status) {
-	log.Debug().Msg("switching off, stopping countdown")
+	log.Debug().Msg("switching off")
 	c.plugS.SwitchOff()
 	status.IntendedSwitchState = false
-	status.CountdownRunning = false
-	status.CountdownNs = defaultCountdownNs
 }
 
 func (c *CoffeeCtl) subscribeSwitchState() {
-	/*
-		We call SwitchOn/Off here to correctly track state if the plug is turned on
-		via the physical button on the plug or the web UI
-	*/
 	c.plugS.SubscribeRelayState(func() {
 		c.commandChan <- func(status *Status) {
 			if !status.SwitchState {
 				status.SwitchState = true
-				c.switchOn(status)
+				status.CountdownRunning = true
 			}
 		}
 	}, func() {
 		c.commandChan <- func(status *Status) {
 			if status.SwitchState {
 				status.SwitchState = false
-				c.switchOff(status)
+				status.IntendedSwitchState = false
+				status.CountdownRunning = false
+				status.CountdownNs = defaultCountdownNs
 			}
 		}
 	})
