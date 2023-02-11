@@ -1,9 +1,6 @@
-package controller
+package coffee_ctl
 
 import (
-	"coffee-ctl/pkg/config"
-	"coffee-ctl/pkg/mqttopts"
-	"coffee-ctl/pkg/sse"
 	"context"
 	"encoding/json"
 	"io"
@@ -16,16 +13,19 @@ import (
 	"github.com/washed/shelly-go"
 
 	"github.com/gin-gonic/gin"
+
+	ks "github.com/washed/kitchen-sink-go"
+	sse "github.com/washed/kitchen-sink-go/sse"
 )
 
 const defaultCountdownNs = 2 * time.Hour
 
-func NewCoffeeCtl(conf config.Config) (c CoffeeCtl) {
+func NewCoffeeCtl(conf Config) (c CoffeeCtl) {
 	r := gin.Default()
 	r.SetTrustedProxies([]string{"0.0.0.0/24"})
 	s := sse.NewServer(nil)
 
-	mqttOpts := mqttopts.GetMQTTOpts()
+	mqttOpts := ks.GetMQTTOpts()
 	b := shelly.NewShellyButton1(conf.ShellyButton1ID, mqttOpts)
 	p := shelly.NewShellyPlugS(conf.ShellyPlugSID, mqttOpts)
 
