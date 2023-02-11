@@ -28,7 +28,12 @@ func NewCoffeeCtl(conf config.Config) (c CoffeeCtl) {
 	b := shelly.NewShellyButton1(conf.ShellyButton1ID, mqttOpts)
 	p := shelly.NewShellyPlugS(conf.ShellyPlugSID, mqttOpts)
 
-	redisOptions, _ := redis.ParseURL(os.Getenv("REDIS_URL"))
+	redisURL := os.Getenv("REDIS_URL")
+	redisOptions, err := redis.ParseURL(redisURL)
+	if err != nil {
+		log.Error().Err(err).Str("redisURL", redisURL).Msg("error parsing REDIS_URL")
+	}
+
 	rdb := redis.NewClient(redisOptions)
 
 	c = CoffeeCtl{
@@ -130,16 +135,22 @@ func (c *CoffeeCtl) getStatus() (*Status, error) {
 
 		status := Status{}
 		c.setStatus(&status)
+		return &status, nil
 	} else if err != nil {
 		log.Panic().Err(err).Msg("error reading status from redis")
 		return nil, err
 	}
 
 	var status Status
-	err = json.Unmarshal([]byte(statusStr), &status)
+	statusBytes := []byte(statusStr)
+	err = json.Unmarshal(statusBytes, &status)
 	log.Debug().Str("statusStr", statusStr).Interface("status", status).Msg("status from redis")
 	if err != nil {
-		log.Error().Err(err).Msg("error unmarshalling status")
+		log.Error().
+			Err(err).
+			Str("statusStr", statusStr).
+			Bytes("statusBytes", statusBytes).
+			Msg("error unmarshalling status")
 	}
 	return &status, nil
 }
