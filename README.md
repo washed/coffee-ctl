@@ -5,9 +5,10 @@
 Name it `config.yaml` and put in exeuctable directory.
 
 ```yaml
-shelly_trv_ids:
-  - 60A423DAE8DE
-  - 588E81A6186F
-  - 60A423D92566
-  - 8CF6811C9911
+log:
+  logLevel: info
+  timeFormat: 2006-01-02T15:04:05.999999999Z07:00
+  logJSON: false
+shelly_plug_s_id: A411DF
+shelly_button1_id: 3C6105E51C74
 ```
