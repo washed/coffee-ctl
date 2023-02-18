@@ -6,7 +6,7 @@ require (
 	github.com/gin-gonic/gin v1.8.2
 	github.com/redis/go-redis/v9 v9.0.2
 	github.com/rs/zerolog v1.29.0
-	github.com/washed/kitchen-sink-go v0.1.1
+	github.com/washed/kitchen-sink-go v0.1.2
 	github.com/washed/shelly-go v0.3.0
 )
 
