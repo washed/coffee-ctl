@@ -14,6 +14,6 @@ coffee_controllers:
   - name: Example
     api_root: example
     shelly_plug_s_id: A411DF
-    shelly_button1_id: 3C6105E51C74
+    shelly_button1_id: 3C6105E51C74  # optional
     defaultCountdownNs: 7200000000
 ```

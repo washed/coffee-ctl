@@ -46,7 +46,7 @@ type CoffeeCtl struct {
 	stream       *sse.Event
 	redis        *redis.Client
 	commandChan  chan func(status *Status)
-	button       shelly.ShellyButton1
+	button       *shelly.ShellyButton1 // optional
 	plugS        shelly.ShellyPlugS
 	config       CoffeeControllerConfig
 }
@@ -55,8 +55,14 @@ func NewCoffeeCtl(config CoffeeControllerConfig, router *gin.Engine) CoffeeCtl {
 	s := sse.NewServer(nil)
 
 	mqttOpts := ks.GetMQTTOpts()
-	b := shelly.NewShellyButton1(config.ShellyButton1ID, mqttOpts)
+
 	p := shelly.NewShellyPlugS(config.ShellyPlugSID, mqttOpts)
+
+	var b_p *shelly.ShellyButton1 = nil
+	if config.ShellyButton1ID != "" {
+		b := shelly.NewShellyButton1(config.ShellyButton1ID, mqttOpts)
+		b_p = &b
+	}
 
 	redisURL := os.Getenv("REDIS_URL")
 	redisOptions, err := redis.ParseURL(redisURL)
@@ -72,7 +78,7 @@ func NewCoffeeCtl(config CoffeeControllerConfig, router *gin.Engine) CoffeeCtl {
 		redisKeyRoot: fmt.Sprintf("coffee-ctl:%s:", config.APIRoot),
 		router:       router,
 		stream:       s,
-		button:       b,
+		button:       b_p,
 		plugS:        p,
 		redis:        rdb,
 		commandChan:  make(chan func(status *Status), 100),
@@ -256,18 +262,24 @@ func (c *CoffeeCtl) emitStatus(status *Status) {
 
 func (c *CoffeeCtl) Connect() {
 	c.plugS.Connect()
-	c.button.Connect()
+	if c.button != nil {
+		c.button.Connect()
+	}
 }
 
 func (c *CoffeeCtl) Close() {
 	c.plugS.Close()
-	c.button.Close()
+	if c.button != nil {
+		c.button.Close()
+	}
 }
 
 func (c *CoffeeCtl) Run() {
 	c.subscribeSwitchState()
-	c.subscribeButtonEvents()
-	c.subscribeButtonBattery()
+	if c.button != nil {
+		c.subscribeButtonEvents()
+		c.subscribeButtonBattery()
+	}
 
 	c.makeRoutes()
 
