@@ -7,10 +7,10 @@ import (
 )
 
 type CoffeeControllerConfig struct {
-	Name               string        `yaml:"name"`
-	APIRoot            string        `yaml:"api_root"`
-	ShellyPlugSID      string        `yaml:"shelly_plug_s_id"`
-	defaultCountdownNs time.Duration `yaml:"default_countdown_ns"`
+	Name             string        `yaml:"name"`
+	APIRoot          string        `yaml:"api_root"`
+	ShellyPlugSID    string        `yaml:"shelly_plug_s_id"`
+	DefaultCountdown time.Duration `yaml:"default_countdown"`
 
 	// Optional fields
 	ShellyButton1ID string `yaml:"shelly_button1_id"`

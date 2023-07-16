@@ -210,7 +210,7 @@ func (c *CoffeeCtl) subscribeSwitchState() {
 				status.SwitchState = false
 				status.IntendedSwitchState = false
 				status.CountdownRunning = false
-				status.CountdownNs = c.config.defaultCountdownNs
+				status.CountdownNs = c.config.DefaultCountdown
 			}
 		}
 	})
