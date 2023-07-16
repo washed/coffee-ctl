@@ -3,6 +3,7 @@ package coffee_ctl
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -17,37 +18,6 @@ import (
 	ks "github.com/washed/kitchen-sink-go"
 	sse "github.com/washed/kitchen-sink-go/sse"
 )
-
-const defaultCountdownNs = 2 * time.Hour
-
-func NewCoffeeCtl(conf Config) (c CoffeeCtl) {
-	r := gin.Default()
-	r.SetTrustedProxies([]string{"0.0.0.0/24"})
-	s := sse.NewServer(nil)
-
-	mqttOpts := ks.GetMQTTOpts()
-	b := shelly.NewShellyButton1(conf.ShellyButton1ID, mqttOpts)
-	p := shelly.NewShellyPlugS(conf.ShellyPlugSID, mqttOpts)
-
-	redisURL := os.Getenv("REDIS_URL")
-	redisOptions, err := redis.ParseURL(redisURL)
-	if err != nil {
-		log.Error().Err(err).Str("redisURL", redisURL).Msg("error parsing REDIS_URL")
-	}
-
-	rdb := redis.NewClient(redisOptions)
-
-	c = CoffeeCtl{
-		router:      r,
-		stream:      s,
-		button:      b,
-		plugS:       p,
-		redis:       rdb,
-		commandChan: make(chan func(status *Status), 100),
-	}
-
-	return c
-}
 
 type ButtonBatteryStatus struct {
 	Soc   float32 `json:"soc"`
@@ -69,17 +39,52 @@ type Status struct {
 }
 
 type CoffeeCtl struct {
-	router      *gin.Engine
-	stream      *sse.Event
-	redis       *redis.Client
-	commandChan chan func(status *Status)
-	button      shelly.ShellyButton1
-	plugS       shelly.ShellyPlugS
+	friendlyName string
+	apiRoot      string
+	redisKeyRoot string
+	router       *gin.Engine
+	stream       *sse.Event
+	redis        *redis.Client
+	commandChan  chan func(status *Status)
+	button       shelly.ShellyButton1
+	plugS        shelly.ShellyPlugS
+	config       CoffeeControllerConfig
+}
+
+func NewCoffeeCtl(config CoffeeControllerConfig, router *gin.Engine) CoffeeCtl {
+	s := sse.NewServer(nil)
+
+	mqttOpts := ks.GetMQTTOpts()
+	b := shelly.NewShellyButton1(config.ShellyButton1ID, mqttOpts)
+	p := shelly.NewShellyPlugS(config.ShellyPlugSID, mqttOpts)
+
+	redisURL := os.Getenv("REDIS_URL")
+	redisOptions, err := redis.ParseURL(redisURL)
+	if err != nil {
+		log.Error().Err(err).Str("redisURL", redisURL).Msg("error parsing REDIS_URL")
+	}
+
+	rdb := redis.NewClient(redisOptions)
+
+	c := CoffeeCtl{
+		friendlyName: config.Name,
+		apiRoot:      config.APIRoot,
+		redisKeyRoot: fmt.Sprintf("coffee-ctl:%s:", config.APIRoot),
+		router:       router,
+		stream:       s,
+		button:       b,
+		plugS:        p,
+		redis:        rdb,
+		commandChan:  make(chan func(status *Status), 100),
+		config:       config,
+	}
+
+	return c
 }
 
 func (c *CoffeeCtl) makeRoutes() {
 	c.router.GET(
-		"/timer/stream",
+		fmt.Sprintf("/%s/timer/stream", c.apiRoot),
 		sse.HeadersMiddleware(),
 		c.stream.ServeHTTP(),
 		func(c *gin.Context) {
@@ -100,37 +105,42 @@ func (c *CoffeeCtl) makeRoutes() {
 			})
 		},
 	)
+	c.router.POST(
+		fmt.Sprintf("/%s/timer", c.apiRoot),
+		func(ctx *gin.Context) {
+			var timer struct {
+				Delta time.Duration `json:"delta"`
+			}
+			err := ctx.ShouldBindJSON(&timer)
+			if err != nil {
+				// return 400?
+			}
 
-	c.router.POST("/timer", func(ctx *gin.Context) {
-		var timer struct {
-			Delta time.Duration `json:"delta"`
-		}
-		err := ctx.ShouldBindJSON(&timer)
-		if err != nil {
-			// return 400?
-		}
+			c.commandChan <- func(status *Status) {
+				c.addTime(status, timer.Delta)
+			}
 
-		c.commandChan <- func(status *Status) {
-			c.addTime(status, timer.Delta)
-		}
+			ctx.Status(http.StatusOK)
+		})
 
-		ctx.Status(http.StatusOK)
-	})
+	c.router.POST(
+		fmt.Sprintf("/%s/on", c.apiRoot),
+		func(ctx *gin.Context) {
+			c.commandChan <- c.switchOn
+			ctx.Status(http.StatusOK)
+		})
 
-	c.router.POST("/on", func(ctx *gin.Context) {
-		c.commandChan <- c.switchOn
-		ctx.Status(http.StatusOK)
-	})
-
-	c.router.POST("/off", func(ctx *gin.Context) {
-		c.commandChan <- c.switchOff
-		ctx.Status(http.StatusOK)
-	})
+	c.router.POST(
+		fmt.Sprintf("/%s/off", c.apiRoot),
+		func(ctx *gin.Context) {
+			c.commandChan <- c.switchOff
+			ctx.Status(http.StatusOK)
+		})
 }
 
 func (c *CoffeeCtl) getStatus() (*Status, error) {
 	ctx := context.Background()
-	statusStr, err := c.redis.Get(ctx, "coffee-ctl:status").Result()
+	statusStr, err := c.redis.Get(ctx, c.redisKeyRoot+"status").Result()
 	if err == redis.Nil {
 		log.Warn().Msg("no status found in redis")
 
@@ -162,7 +172,7 @@ func (c *CoffeeCtl) setStatus(status *Status) {
 	if err != nil {
 		log.Error().Err(err).Msg("error marshalling status")
 	}
-	err = c.redis.Set(ctx, "coffee-ctl:status", statusBytes, time.Hour).Err()
+	err = c.redis.Set(ctx, c.redisKeyRoot+"status", statusBytes, time.Hour).Err()
 	if err != nil {
 		log.Panic().Err(err).Msg("error writing status to redis")
 	}
@@ -194,7 +204,7 @@ func (c *CoffeeCtl) subscribeSwitchState() {
 				status.SwitchState = false
 				status.IntendedSwitchState = false
 				status.CountdownRunning = false
-				status.CountdownNs = defaultCountdownNs
+				status.CountdownNs = c.config.defaultCountdownNs
 			}
 		}
 	})
@@ -244,19 +254,22 @@ func (c *CoffeeCtl) emitStatus(status *Status) {
 	c.stream.Message <- string(payload)
 }
 
-func (c *CoffeeCtl) Run() {
+func (c *CoffeeCtl) Connect() {
 	c.plugS.Connect()
-	defer c.plugS.Close()
-	c.subscribeSwitchState()
-
 	c.button.Connect()
-	defer c.button.Close()
+}
+
+func (c *CoffeeCtl) Close() {
+	c.plugS.Close()
+	c.button.Close()
+}
+
+func (c *CoffeeCtl) Run() {
+	c.subscribeSwitchState()
 	c.subscribeButtonEvents()
 	c.subscribeButtonBattery()
 
 	c.makeRoutes()
-
-	go c.router.Run()
 
 	tick := time.Tick(200 * time.Millisecond)
 

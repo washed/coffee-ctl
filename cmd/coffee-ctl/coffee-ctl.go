@@ -8,6 +8,7 @@ import (
 
 	cc "coffee-ctl/pkg"
 
+	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
 	ks "github.com/washed/kitchen-sink-go"
 )
@@ -17,9 +18,18 @@ func main() {
 	ks.ReadConfig(&config)
 	ks.InitLogger(config.Log)
 
-	c := cc.NewCoffeeCtl(config)
+	r := gin.Default()
+	r.SetTrustedProxies([]string{"0.0.0.0/24"})
 
-	go c.Run()
+	for _, coffeeControllerConfig := range config.CoffeeControllers {
+		c := cc.NewCoffeeCtl(coffeeControllerConfig, r)
+		c.Connect()
+		defer c.Close()
+
+		go c.Run()
+	}
+
+	go r.Run()
 
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, os.Interrupt)
